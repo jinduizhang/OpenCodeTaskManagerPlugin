@@ -10,13 +10,47 @@
 - **重试机制**：可配置失败重试次数
 - **Agent 集成**：支持 explore、oracle、build 等 Agent
 - **Skill 支持**：任务执行前加载指定 Skill
-- **事件钩子**：通过 session.idle、session.error 监听任务生命周期
 - **数据持久化**：任务数据在 OpenCode 重启后保留
 - **TUI 界面**：终端界面监控任务状态
 
-## 安装方式
+## 快速开始
 
-### 方式一：下载 ZIP 包（推荐）
+### 方式一：单文件插件（推荐）
+
+最简单的集成方式，只需要一个文件：
+
+1. 复制 `index-single.ts` 到你的项目：
+
+```bash
+# 创建插件目录
+mkdir -p your-project/.opencode/plugins
+
+# 复制插件文件
+cp index-single.ts your-project/.opencode/plugins/task-manager.ts
+```
+
+2. 在 `.opencode/package.json` 中添加依赖：
+
+```json
+{
+  "dependencies": {
+    "@opencode-ai/plugin": "1.2.26"
+  }
+}
+```
+
+3. 安装依赖：
+
+```bash
+cd your-project/.opencode
+npm install
+```
+
+4. 重启 OpenCode
+
+### 方式二：完整版插件
+
+包含 TUI 终端界面：
 
 1. 下载 `dist/task-manager.zip`
 
@@ -26,58 +60,119 @@
 your-project/
 └── .opencode/
     └── plugins/
-        └── task-manager/    <-- 解压到这里
+        └── task-manager/
             ├── index.ts
             ├── package.json
-            ├── README.md
             └── src/
+                └── tui/    # TUI 终端界面
 ```
 
-3. 安装依赖：
+3. 安装依赖并重启 OpenCode
 
-```bash
-cd your-project/.opencode/plugins/task-manager
-npm install
+## 可用工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `task-add` | 添加任务 | agent, prompt, title?, priority?, retryCount? |
+| `task-list` | 列出任务 | status? |
+| `task-status` | 查询状态 | taskId |
+| `task-cancel` | 取消任务 | taskId |
+| `task-retry` | 重试任务 | taskId |
+| `queue-start` | 启动队列 | - |
+| `queue-stop` | 停止队列 | - |
+| `queue-status` | 队列状态 | - |
+| `task-tui` | TUI说明 | - |
+
+## 使用示例
+
+### 添加任务
+
+```
+task-add agent=explore prompt="分析 src/ 目录结构"
+task-add agent=build prompt="修复登录 Bug" priority=high retryCount=3
 ```
 
-4. 重启 OpenCode
+### 查看任务
 
-### 方式二：从源码打包
+```
+task-list
+task-list status=pending
+```
+
+### 队列控制
+
+```
+queue-start
+queue-status
+queue-stop
+```
+
+## TUI 终端界面
+
+完整版包含 TUI 界面，在独立终端运行：
 
 ```bash
-git clone https://github.com/jinduizhang/OpenCodeTaskManagerPlugin.git
-cd OpenCodeTaskManagerPlugin
+cd your-project
+bun run .opencode/plugins/task-manager/src/tui/cli.ts
+```
 
+### TUI 快捷键
+
+| 按键 | 功能 |
+|-----|------|
+| `↑/↓` | 选择任务 |
+| `Enter` | 查看详情 |
+| `A` | 添加任务 |
+| `C` | 取消任务 |
+| `R` | 重试任务 |
+| `Q/Esc` | 退出 |
+
+## 数据存储
+
+任务数据存储在 `.opencode/task-manager/tasks.json`：
+
+```json
+{
+  "isRunning": false,
+  "tasks": [
+    {
+      "id": "task-xxx",
+      "title": "代码分析",
+      "agent": "explore",
+      "prompt": "分析项目结构",
+      "priority": "high",
+      "status": "pending",
+      "createdAt": 1705312200000
+    }
+  ]
+}
+```
+
+## 任务状态
+
+```
+pending  → 等待执行
+running  → 执行中
+success  → 执行成功
+failed   → 执行失败
+```
+
+## 构建与测试
+
+```bash
+# 安装依赖
 npm install
+
+# 运行测试
+npm test
+
+# 打包
 npm run zip
-
-# 输出: dist/task-manager.zip
 ```
 
-### 方式三：全局插件
+## 许可证
 
-安装到 `~/.config/opencode/plugins/task-manager/`，所有项目共享。
-
-## 配置
-
-### YAML 配置（可选）
-
-创建 `.opencode/task-manager/tasks.yaml`：
-
-```yaml
-# 队列设置
-settings:
-  autoStart: true        # OpenCode 启动时自动开始执行队列
-  maxConcurrent: 1       # 串行执行（1 = 一次执行一个任务）
-  logLevel: "info"       # 日志级别: debug, info, warn, error
-
-# 预定义任务
-tasks:
-  - name: "代码分析"
-    description: "分析项目结构"
-    agent: "explore"
-    prompt: |
-      分析 src/ 目录：
+MIT
       1. 列出主要模块
       2. 分析依赖关系
       3. 生成架构图

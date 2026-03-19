@@ -208,27 +208,27 @@ export const TaskManagerPlugin: Plugin = async ({ client, directory }) => {
       }),
 
       "task-tui": tool({
-        description: "启动任务管理器终端界面（需要在独立终端运行）",
+        description: "启动任务管理器终端界面",
         args: {},
         async execute(args, context) {
-          const storageDir = getStorageDir(context.directory)
           const tasksFile = getTasksFile(context.directory)
+          const tuiPath = path.join(context.directory, ".opencode", "plugins", "task-manager", "src", "tui", "cli.ts")
           
           return `🖥️ 任务管理器 TUI
 
-方法1 - 在新终端窗口运行:
-  cd ${context.directory}
-  bun run .opencode/plugins/task-manager/src/tui/cli.ts
+在新的终端窗口运行:
 
-方法2 - 使用现有工具:
+  cd ${context.directory}
+  npx tsx ${tuiPath}
+
+或使用工具命令:
   task-list    列出任务
   task-add     添加任务
   queue-status 查看状态
 
-数据文件位置:
-  ${tasksFile}
+数据文件: ${tasksFile}
 
-快捷键 (TUI中):
+TUI 快捷键:
   ↑/↓    选择任务
   Enter  查看详情
   A      添加任务
