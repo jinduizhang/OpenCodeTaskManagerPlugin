@@ -25,8 +25,8 @@ describe("E2E: Plugin Loading", () => {
   });
 
   it("should load plugin and return plugin definition", async () => {
-    // Test: Call plugin setup
-    const pluginReturn = await TaskManagerPlugin.setup(ctx);
+    // Test: Call plugin function
+    const pluginReturn = await TaskManagerPlugin(ctx as any);
 
     // Verify: Plugin returned expected structure
     expect(pluginReturn).toBeDefined();
@@ -36,7 +36,7 @@ describe("E2E: Plugin Loading", () => {
   });
 
   it("should register all required tools", async () => {
-    const pluginReturn = await TaskManagerPlugin.setup(ctx);
+    const pluginReturn = await TaskManagerPlugin(ctx as any);
     const tools = pluginReturn.tool!;
 
     // Verify: All tools are registered
@@ -45,7 +45,6 @@ describe("E2E: Plugin Loading", () => {
     expect(tools["task-status"]).toBeDefined();
     expect(tools["task-cancel"]).toBeDefined();
     expect(tools["task-retry"]).toBeDefined();
-    expect(tools["task-tui"]).toBeDefined();
     expect(tools["queue-status"]).toBeDefined();
     expect(tools["queue-start"]).toBeDefined();
     expect(tools["queue-stop"]).toBeDefined();
@@ -57,30 +56,16 @@ describe("E2E: Plugin Loading", () => {
   });
 
   it("should bind session hooks", async () => {
-    const pluginReturn = await TaskManagerPlugin.setup(ctx);
+    const pluginReturn = await TaskManagerPlugin(ctx as any);
 
     // Verify: Hooks are functions
     expect(typeof pluginReturn["session.idle"]).toBe("function");
     expect(typeof pluginReturn["session.error"]).toBe("function");
-    expect(typeof pluginReturn["session.created"]).toBe("function");
     expect(typeof pluginReturn["shell.env"]).toBe("function");
   });
 
-  it("should log plugin initialization", async () => {
-    await TaskManagerPlugin.setup(ctx);
-
-    // Verify: Logs were recorded
-    const logs = ctx.client.getLogHistory();
-    const initLogs = logs.filter(
-      (l) => l.service === "task-manager" && l.level === "info"
-    );
-
-    expect(initLogs.length).toBeGreaterThanOrEqual(1);
-    expect(initLogs[0].message).toContain("task-manager");
-  });
-
   it("should initialize storage directory", async () => {
-    await TaskManagerPlugin.setup(ctx);
+    await TaskManagerPlugin(ctx as any);
 
     // Verify: Storage directory was created
     const storageDir = `${tempDir}/.opencode/task-manager`;

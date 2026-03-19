@@ -17,7 +17,7 @@ describe("E2E: Events and Persistence", () => {
   beforeEach(async () => {
     tempDir = createTempDir();
     ctx = createMockPluginContext({ directory: tempDir }) as PluginContext & { client: MockOpenCodeClient };
-    pluginReturn = await TaskManagerPlugin.setup(ctx);
+    pluginReturn = await TaskManagerPlugin(ctx as any);
   });
 
   afterEach(() => {
@@ -124,7 +124,7 @@ describe("E2E: Events and Persistence", () => {
       );
 
       // Reload plugin
-      const newPluginReturn = await TaskManagerPlugin.setup(ctx);
+      const newPluginReturn = await TaskManagerPlugin(ctx as any);
 
       // Verify task still exists
       const listTool = newPluginReturn.tool!["task-list"];

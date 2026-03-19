@@ -19,7 +19,7 @@ describe("E2E: Full Execution Flow", () => {
   beforeEach(async () => {
     tempDir = createTempDir();
     ctx = createMockPluginContext({ directory: tempDir }) as PluginContext & { client: MockOpenCodeClient };
-    pluginReturn = await TaskManagerPlugin.setup(ctx);
+    pluginReturn = await TaskManagerPlugin(ctx as any);
   });
 
   afterEach(() => {

@@ -17,7 +17,7 @@ describe("E2E: task-add Tool", () => {
   beforeEach(async () => {
     tempDir = createTempDir();
     ctx = createMockPluginContext({ directory: tempDir });
-    pluginReturn = await TaskManagerPlugin.setup(ctx);
+    pluginReturn = await TaskManagerPlugin(ctx as any);
   });
 
   afterEach(() => {

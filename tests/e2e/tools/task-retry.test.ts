@@ -17,7 +17,7 @@ describe("E2E: task-retry Tool", () => {
   beforeEach(async () => {
     tempDir = createTempDir();
     ctx = createMockPluginContext({ directory: tempDir });
-    pluginReturn = await TaskManagerPlugin.setup(ctx);
+    pluginReturn = await TaskManagerPlugin(ctx as any);
   });
 
   afterEach(() => {
@@ -77,7 +77,7 @@ describe("E2E: task-retry Tool", () => {
     fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
 
     // Reload plugin to pick up the task
-    pluginReturn = await TaskManagerPlugin.setup(ctx);
+    pluginReturn = await TaskManagerPlugin(ctx as any);
 
     const retryTool = pluginReturn.tool!["task-retry"];
     const result = await retryTool.execute(
