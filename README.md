@@ -16,21 +16,20 @@
 
 ## 安装方式
 
-### 方式一：下载预打包插件（推荐）
+### 方式一：下载 ZIP 包（推荐）
 
-1. 从 GitHub 下载 `dist/task-manager/` 目录
+1. 下载 `dist/task-manager.zip`
 
-2. 复制到你的项目：
+2. 解压到你的项目：
 
 ```
 your-project/
 └── .opencode/
     └── plugins/
-        └── task-manager/    <-- 复制到这里
+        └── task-manager/    <-- 解压到这里
             ├── index.ts
             ├── package.json
             ├── README.md
-            ├── INSTALL.md
             └── src/
 ```
 
@@ -46,16 +45,13 @@ npm install
 ### 方式二：从源码打包
 
 ```bash
-# 克隆仓库
 git clone https://github.com/jinduizhang/OpenCodeTaskManagerPlugin.git
 cd OpenCodeTaskManagerPlugin
 
-# 安装依赖并打包
 npm install
-npm run pack
+npm run zip
 
-# 输出在 dist/task-manager/
-# 然后按照方式一的步骤 2-4 操作
+# 输出: dist/task-manager.zip
 ```
 
 ### 方式三：全局插件
