@@ -7,9 +7,6 @@
 import * as fs from "fs";
 import * as path from "path";
 
-// 检测是否在 Bun 环境中
-const isBun = typeof Bun !== "undefined";
-
 /**
  * 文件锁类
  * 

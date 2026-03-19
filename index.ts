@@ -14,7 +14,9 @@ import type {
   PluginReturn,
   ToolDefinition,
   CreateTaskInput,
+  TaskPriority,
 } from "./src/types";
+import type { QueueManagerOptions } from "./src/queue";
 import { EventBus } from "./src/events";
 import { FileStorage } from "./src/storage";
 import { ConfigParser } from "./src/config";

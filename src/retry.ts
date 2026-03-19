@@ -58,7 +58,7 @@ interface PendingRetry {
   scheduledAt: number;
   attempt: number;
   delay: number;
-  timeoutId?: Timer;
+  timeoutId?: ReturnType<typeof setTimeout>;
 }
 
 /**
