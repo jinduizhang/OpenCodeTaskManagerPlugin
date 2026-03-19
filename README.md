@@ -38,8 +38,6 @@ your-project/
 
 ```bash
 cd your-project/.opencode/plugins/task-manager
-bun install
-# 或
 npm install
 ```
 
@@ -53,8 +51,8 @@ git clone https://github.com/jinduizhang/OpenCodeTaskManagerPlugin.git
 cd OpenCodeTaskManagerPlugin
 
 # 安装依赖并打包
-bun install
-bun run pack
+npm install
+npm run pack
 
 # 输出在 dist/task-manager/
 # 然后按照方式一的步骤 2-4 操作
@@ -526,14 +524,12 @@ bun run .opencode/plugins/task-manager/src/tui/cli.ts
 
 ```bash
 # 安装依赖
-bun install
+npm install
 
-# 构建
-bun run build
+# 类型检查
+npm run build
 
 # 运行测试
-bun test
-# 或
 npm test
 ```
 

@@ -79,12 +79,6 @@ your-project/
 
 \`\`\`bash
 cd your-project/.opencode/plugins/task-manager
-bun install
-\`\`\`
-
-或者 npm:
-
-\`\`\`bash
 npm install
 \`\`\`
 
@@ -128,5 +122,5 @@ console.log(`\n✅ 打包完成!`);
 console.log(`\n📁 输出目录: ${outputDir}`);
 console.log(`\n使用方法:`);
 console.log(`  1. 复制 dist/task-manager/ 到项目的 .opencode/plugins/ 目录`);
-console.log(`  2. 运行 bun install 安装依赖`);
+console.log(`  2. 运行 npm install 安装依赖`);
 console.log(`  3. 重启 OpenCode`);
