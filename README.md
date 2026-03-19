@@ -16,31 +16,51 @@
 
 ## 安装方式
 
-### 方式一：项目级插件（推荐）
+### 方式一：下载预打包插件（推荐）
 
-将插件复制到项目的 `.opencode/plugins/` 目录：
+1. 从 GitHub 下载 `dist/task-manager/` 目录
+
+2. 复制到你的项目：
 
 ```
 your-project/
-├── .opencode/
-│   └── plugins/
-│       └── task-manager/
-│           ├── index.ts
-│           ├── package.json
-│           └── src/
-│               ├── types.ts
-│               ├── events.ts
-│               ├── queue.ts
-│               ├── executor.ts
-│               ├── monitor.ts
-│               ├── retry.ts
-│               ├── storage/
-│               ├── config/
-│               ├── api/
-│               └── tui/
+└── .opencode/
+    └── plugins/
+        └── task-manager/    <-- 复制到这里
+            ├── index.ts
+            ├── package.json
+            ├── README.md
+            ├── INSTALL.md
+            └── src/
 ```
 
-### 方式二：全局插件
+3. 安装依赖：
+
+```bash
+cd your-project/.opencode/plugins/task-manager
+bun install
+# 或
+npm install
+```
+
+4. 重启 OpenCode
+
+### 方式二：从源码打包
+
+```bash
+# 克隆仓库
+git clone https://github.com/jinduizhang/OpenCodeTaskManagerPlugin.git
+cd OpenCodeTaskManagerPlugin
+
+# 安装依赖并打包
+bun install
+bun run pack
+
+# 输出在 dist/task-manager/
+# 然后按照方式一的步骤 2-4 操作
+```
+
+### 方式三：全局插件
 
 安装到 `~/.config/opencode/plugins/task-manager/`，所有项目共享。
 
