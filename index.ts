@@ -1,244 +1,352 @@
+import type { Plugin } from "@opencode-ai/plugin"
+import { tool } from "@opencode-ai/plugin"
+import * as fs from "fs"
+import * as path from "path"
+
 /**
  * OpenCode Task Manager Plugin
  * 
- * 任务编排插件，支持批量任务执行、优先级队列和 Agent 协调
+ * 串行任务队列：自动执行下一个任务
+ * 按项目目录隔离队列状态
  */
 
-import type { Plugin } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin";
-import { EventBus } from "./src/events";
-import { FileStorage } from "./src/storage";
-import { ConfigParser } from "./src/config";
-import { QueueManager } from "./src/queue";
-import { TaskExecutor } from "./src/executor";
-import { TaskMonitor } from "./src/monitor";
-import { RetryManager } from "./src/retry";
-import type { TaskPriority } from "./src/types";
+interface TaskResult {
+  filename: string
+  sessionId: string
+  status: "pending" | "running" | "success" | "failed"
+  summary?: string
+  error?: string
+}
 
-const PLUGIN_NAME = "task-manager";
-const PLUGIN_VERSION = "1.0.0";
+interface QueueState {
+  dirPath: string
+  files: string[]
+  prompt: string
+  currentIndex: number
+  results: TaskResult[]
+  running: boolean
+  currentSessionId?: string
+}
 
-/**
- * Task Manager Plugin
- */
+// 按项目目录存储队列，避免不同项目/session之间的冲突
+const queueMap = new Map<string, QueueState>()
+
+// 获取或创建队列
+function getQueue(directory: string): QueueState {
+  if (!queueMap.has(directory)) {
+    queueMap.set(directory, {
+      dirPath: "",
+      files: [],
+      prompt: "",
+      currentIndex: 0,
+      results: [],
+      running: false,
+    })
+  }
+  return queueMap.get(directory)!
+}
+
 export const TaskManagerPlugin: Plugin = async ({ client, directory }) => {
-  // 初始化核心组件
-  const eventBus = new EventBus();
-  const storage = new FileStorage({ directory });
-  await storage.initialize();
-
-  const configParser = new ConfigParser({ directory });
-  const config = await configParser.load();
-
-  // 延迟引用解决循环依赖
-  let executorRef: TaskExecutor | null = null;
-  const onExecuteCallback = async (task: any) => {
-    if (executorRef) {
-      await executorRef.execute(task);
+  
+  // 获取当前项目的队列
+  const queue = getQueue(directory)
+  
+  // 获取 Session 结果摘要
+  async function getSessionSummary(sessionId: string): Promise<string> {
+    try {
+      const messages = await client.session.messages({ path: { id: sessionId } })
+      if (!messages.data || messages.data.length === 0) {
+        return "无结果"
+      }
+      const lastMessage = messages.data[messages.data.length - 1]
+      const parts = (lastMessage as any).parts || []
+      const textParts = parts
+        .filter((p: any) => p.type === "text")
+        .map((p: any) => p.text)
+        .join("\n")
+      return textParts.slice(0, 500) + (textParts.length > 500 ? "..." : "")
+    } catch {
+      return "获取结果失败"
     }
-  };
+  }
 
-  const queueManager = new QueueManager({
-    storage,
-    eventBus,
-    config,
-    onExecute: onExecuteCallback,
-  });
+  // 等待 Session 完成（轮询）
+  async function waitForSessionComplete(sessionId: string): Promise<boolean> {
+    for (let i = 0; i < 1800; i++) { // 最多等1小时 (1800 * 2秒 = 3600秒)
+      try {
+        const result = await client.session.get({ path: { id: sessionId } })
+        const session = result.data as any
+        if (session?.status === "idle") {
+          return true
+        }
+        if (session?.status === "error") {
+          return false
+        }
+      } catch {
+        // 忽略错误，继续轮询
+      }
+      // 等待2秒后再检查
+      await new Promise(r => setTimeout(r, 2000))
+    }
+    return false
+  }
 
-  const executor = new TaskExecutor({
-    client,
-    eventBus,
-    storage,
-    queueManager,
-  });
-
-  executorRef = executor;
-
-  const monitor = new TaskMonitor({
-    client,
-    eventBus,
-    storage,
-    executor,
-    queueManager,
-  });
-
-  const retryManager = new RetryManager({
-    eventBus,
-    storage,
-    queueManager,
-  });
-
-  await queueManager.initialize();
-
-  // 返回 hooks
-  return {
-    // 注册自定义工具
-    tool: {
-      "task-add": tool({
-        description: "向任务管理器添加一个新任务。任务会在独立的 session 中串行执行。",
-        args: {
-          title: tool.schema.string().describe("任务标题"),
-          agent: tool.schema.string().describe("要调用的 agent 名称，如: explore, oracle, build"),
-          prompt: tool.schema.string().describe("传递给 agent 的详细任务描述"),
-          priority: tool.schema.enum(["high", "medium", "low"]).optional().default("medium").describe("任务优先级"),
-          retryCount: tool.schema.number().optional().default(0).describe("失败后重试次数"),
-          skill: tool.schema.string().optional().describe("可选的 skill 名称"),
+  // 执行单个任务
+  async function executeTask(filename: string): Promise<{ success: boolean; summary?: string; error?: string }> {
+    // 提取纯文件名（不含路径）
+    const baseName = path.basename(filename)
+    // 文件绝对路径
+    const absolutePath = path.resolve(queue.dirPath, filename)
+    
+    // 替换 prompt 中的 {filename}
+    const userPrompt = queue.prompt.replace(/{filename}/g, filename)
+    // 实际发送的 prompt：文件绝对路径 + 用户提示词
+    const fullPrompt = `【文件路径：${absolutePath}】\n\n${userPrompt}`
+    
+    // Session 标题：文件名
+    const title = baseName
+    
+    // 创建 Session
+    const session = await client.session.create({
+      body: { title }
+    })
+    if (!session.data) {
+      return { success: false, error: "创建 Session 失败" }
+    }
+    
+    const sessionId = session.data.id
+    queue.currentSessionId = sessionId
+    
+    // 记录任务
+    queue.results.push({
+      filename,
+      sessionId,
+      status: "running",
+    })
+    
+    // 发送 prompt 并等待完成
+    try {
+      await client.session.prompt({
+        path: { id: sessionId },
+        body: {
+          parts: [{ type: "text", text: fullPrompt }],
         },
-        async execute(args, context) {
-          const task = await queueManager.addTask({
-            title: args.title,
-            agent: args.agent,
-            prompt: args.prompt,
-            priority: args.priority as TaskPriority,
-            retryCount: args.retryCount,
-            skill: args.skill,
-            source: "agent",
-          });
+      })
+      
+      // 获取结果
+      const summary = await getSessionSummary(sessionId)
+      return { success: true, summary }
+    } catch (e) {
+      return { success: false, error: String(e) }
+    }
+  }
 
-          return {
-            success: true,
-            taskId: task.id,
-            message: `任务已添加到队列。当前队列中有 ${queueManager.getPendingCount()} 个待执行任务。`,
-          };
+  // 执行所有任务（串行）
+  async function executeAllTasks(): Promise<void> {
+    while (queue.running && queue.currentIndex < queue.files.length) {
+      const filename = queue.files[queue.currentIndex]
+      
+      const result = await executeTask(filename)
+      
+      // 更新任务状态
+      const task = queue.results.find(t => t.filename === filename && t.status === "running")
+      if (task) {
+        task.status = result.success ? "success" : "failed"
+        task.summary = result.summary
+        task.error = result.error
+      }
+      
+      queue.currentIndex++
+    }
+    
+    queue.running = false
+    queue.currentSessionId = undefined
+  }
+
+  return {
+    tool: {
+      "task-create": tool({
+        description: "创建任务队列",
+        args: {
+          dir: tool.schema.string().describe("目录路径（支持相对路径或绝对路径）"),
+          ext: tool.schema.string().optional().default("java").describe("文件后缀，如 java、ts、tsx"),
+          recursive: tool.schema.boolean().optional().default(false).describe("递归扫描子目录"),
+          prompt: tool.schema.string().describe("任务提示词，{filename} 代表文件名"),
+        },
+        async execute(args) {
+          // 支持绝对路径和相对路径
+          const dirPath = path.isAbsolute(args.dir) 
+            ? args.dir 
+            : path.resolve(directory, args.dir)
+          
+          if (!fs.existsSync(dirPath)) {
+            return `❌ 目录不存在: ${dirPath}`
+          }
+
+          // 将文件后缀转换为正则
+          // 支持 "java"、".java"、"ts"、".ts" 等格式
+          let ext = args.ext || "java"
+          if (!ext.startsWith(".")) {
+            ext = "." + ext
+          }
+          const regex = new RegExp(`\\${ext}$`)
+
+          // 递归扫描，返回相对于 baseDir 的路径
+          function scanDirectory(baseDir: string, currentDir: string, regex: RegExp): string[] {
+            const results: string[] = []
+            const items = fs.readdirSync(currentDir)
+            
+            for (const item of items) {
+              const fullPath = path.join(currentDir, item)
+              const stat = fs.statSync(fullPath)
+              
+              if (stat.isDirectory()) {
+                // 递归扫描子目录
+                const subFiles = scanDirectory(baseDir, fullPath, regex)
+                results.push(...subFiles)
+              } else if (stat.isFile() && regex.test(item)) {
+                // 计算相对于 baseDir 的路径
+                const relativePath = path.relative(baseDir, fullPath)
+                results.push(relativePath)
+              }
+            }
+            return results
+          }
+
+          const files = args.recursive 
+            ? scanDirectory(dirPath, dirPath, regex)
+            : fs.readdirSync(dirPath).filter(f => regex.test(f) && fs.statSync(path.join(dirPath, f)).isFile())
+
+          if (files.length === 0) {
+            return `❌ 没有匹配 ".${ext}" 的文件\n目录: ${dirPath}`
+          }
+
+          // 更新队列属性（而不是替换整个对象）
+          queue.dirPath = dirPath
+          queue.files = files
+          queue.prompt = args.prompt
+          queue.currentIndex = 0
+          queue.results = []
+          queue.running = false
+
+          let result = `✅ 队列已创建\n\n文件数: ${files.length}\n\n`
+          files.slice(0, 20).forEach((f, i) => result += `  ${i + 1}. ${f}\n`)
+          if (files.length > 20) result += `  ... 还有 ${files.length - 20} 个\n`
+
+          return result
         },
       }),
 
-      "task-list": tool({
-        description: "列出任务管理器中的所有任务及其状态",
-        args: {
-          status: tool.schema.enum(["pending", "running", "success", "failed", "all"]).optional().default("all").describe("筛选条件"),
-        },
-        async execute(args) {
-          let tasks = queueManager.getTasks();
-          if (args.status && args.status !== "all") {
-            tasks = tasks.filter((t) => t.status === args.status);
+      "task-start": tool({
+        description: "启动队列（自动执行所有任务）",
+        args: {},
+        async execute() {
+          if (queue.files.length === 0) {
+            return "❌ 队列为空，请先运行 task-create"
           }
-          const state = queueManager.getQueueState();
-          return {
-            total: tasks.length,
-            statistics: state.statistics,
-            tasks: tasks.map((t) => ({
-              id: t.id,
-              title: t.title,
-              agent: t.agent,
-              status: t.status,
-              priority: t.priority,
-              createdAt: new Date(t.createdAt).toISOString(),
-            })),
-          };
+
+          if (queue.running) {
+            return `❌ 队列正在执行中\n当前: ${queue.currentIndex}/${queue.files.length}`
+          }
+
+          queue.running = true
+          queue.currentIndex = 0
+          queue.results = []
+
+          // 打开 Session 选择器
+          await client.tui.openSessions()
+
+          // 启动执行（后台运行，不阻塞）
+          executeAllTasks()
+
+          return `✅ 队列已启动\n\n总任务: ${queue.files.length}\n\n📌 任务会自动串行执行\n📌 每个 Session 会显示在右侧任务栏\n\n运行 task-status 查看进度`
         },
       }),
 
       "task-status": tool({
-        description: "查询指定任务的详细状态和执行结果",
-        args: {
-          taskId: tool.schema.string().describe("任务 ID"),
-        },
-        async execute(args) {
-          const task = queueManager.getTask(args.taskId);
-          if (!task) {
-            return { success: false, error: `任务 ${args.taskId} 不存在` };
-          }
-          return {
-            success: true,
-            task: {
-              id: task.id,
-              title: task.title,
-              status: task.status,
-              agent: task.agent,
-              priority: task.priority,
-              result: task.result,
-              error: task.error,
-              createdAt: new Date(task.createdAt).toISOString(),
-            },
-          };
-        },
-      }),
-
-      "task-cancel": tool({
-        description: "取消一个待执行的任务",
-        args: {
-          taskId: tool.schema.string().describe("要取消的任务 ID"),
-        },
-        async execute(args) {
-          const task = queueManager.getTask(args.taskId);
-          if (!task) {
-            return { success: false, error: "任务不存在" };
-          }
-          if (task.status !== "pending") {
-            return { success: false, error: `只能取消 pending 状态的任务，当前状态: ${task.status}` };
-          }
-          const success = await queueManager.cancelTask(args.taskId);
-          return { success, message: success ? `任务 ${args.taskId} 已取消` : "取消失败" };
-        },
-      }),
-
-      "task-retry": tool({
-        description: "重试一个失败的任务",
-        args: {
-          taskId: tool.schema.string().describe("要重试的任务 ID"),
-        },
-        async execute(args) {
-          const task = queueManager.getTask(args.taskId);
-          if (!task) {
-            return { success: false, error: "任务不存在" };
-          }
-          if (task.status !== "failed") {
-            return { success: false, error: `只能重试 failed 状态的任务，当前状态: ${task.status}` };
-          }
-          const success = await queueManager.retryTask(args.taskId);
-          return { success, message: success ? `任务 ${args.taskId} 已重新加入队列` : "重试失败" };
-        },
-      }),
-
-      "queue-status": tool({
-        description: "获取任务队列的当前状态",
+        description: "查看队列状态",
         args: {},
         async execute() {
-          const state = queueManager.getQueueState();
-          return {
-            isRunning: state.isRunning,
-            currentTask: state.currentTask ? { id: state.currentTask.id, title: state.currentTask.title } : null,
-            statistics: state.statistics,
-          };
+          if (queue.files.length === 0) {
+            return "📭 队列为空"
+          }
+
+          const success = queue.results.filter(t => t.status === "success").length
+          const failed = queue.results.filter(t => t.status === "failed").length
+          const remaining = queue.files.length - queue.currentIndex
+
+          let result = `📊 队列状态\n\n`
+          result += `运行中: ${queue.running ? "✅" : "⏸️"}\n`
+          result += `总计: ${queue.files.length}\n`
+          result += `成功: ${success}\n`
+          result += `失败: ${failed}\n`
+          result += `待执行: ${remaining}\n`
+
+          if (queue.currentSessionId) {
+            const currentTask = queue.results.find(t => t.sessionId === queue.currentSessionId)
+            if (currentTask) {
+              result += `\n🔄 正在执行: ${currentTask.filename}`
+            }
+          } else if (!queue.running && queue.currentIndex >= queue.files.length && queue.files.length > 0) {
+            result += `\n\n✅ 所有任务已完成`
+          }
+
+          return result
         },
       }),
 
-      "queue-start": tool({
-        description: "启动任务队列处理",
+      "task-stop": tool({
+        description: "停止队列",
         args: {},
         async execute() {
-          queueManager.start();
-          return { success: true, message: "队列已启动" };
+          queue.running = false
+          return `⏸️ 队列已停止\n\n已完成: ${queue.currentIndex}/${queue.files.length}`
         },
       }),
 
-      "queue-stop": tool({
-        description: "停止任务队列处理",
+      "task-summary": tool({
+        description: "汇总结果",
         args: {},
         async execute() {
-          queueManager.stop();
-          return { success: true, message: "队列已停止" };
+          if (queue.results.length === 0) {
+            return "📭 暂无结果，请先运行 task-start"
+          }
+
+          const success = queue.results.filter(t => t.status === "success")
+          const failed = queue.results.filter(t => t.status === "failed")
+
+          let result = `📊 任务汇总\n\n`
+          result += `总计: ${queue.results.length}\n`
+          result += `成功: ${success.length}\n`
+          result += `失败: ${failed.length}\n`
+          result += `${"─".repeat(40)}\n\n`
+
+          for (const task of queue.results) {
+            const icon = task.status === "success" ? "✅" : "❌"
+            result += `${icon} ${task.filename}\n`
+            if (task.summary) {
+              result += `   ${task.summary.slice(0, 100)}${task.summary.length > 100 ? "..." : ""}\n`
+            }
+            if (task.error) {
+              result += `   错误: ${task.error}\n`
+            }
+            result += `\n`
+          }
+
+          return result
+        },
+      }),
+
+      "sessions": tool({
+        description: "打开 Session 选择器",
+        args: {},
+        async execute() {
+          await client.tui.openSessions()
+          return "✅ 已打开 Session 选择器"
         },
       }),
     },
+  }
+}
 
-    // Session 空闲事件
-    "session.idle": async (input) => {
-      await monitor.onSessionIdle(input.sessionID);
-    },
-
-    // Session 错误事件
-    "session.error": async (input, output) => {
-      await monitor.onSessionError(input.sessionID, output.error);
-    },
-
-    // Shell 环境注入
-    "shell.env": async (input, output) => {
-      output.env.TASK_MANAGER_PLUGIN = "1";
-      output.env.TASK_MANAGER_VERSION = PLUGIN_VERSION;
-    },
-  };
-};
-
-export default TaskManagerPlugin;
+export default TaskManagerPlugin

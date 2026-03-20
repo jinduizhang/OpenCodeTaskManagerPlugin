@@ -2,30 +2,13 @@
   "name": "opencode-task-manager",
   "version": "1.0.0",
   "type": "module",
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit",
-    "pack": "node scripts/pack.js",
-    "zip": "node scripts/zip.js"
-  },
+  "description": "OpenCode Task Manager Plugin - 串行任务队列插件",
+  "main": "index.ts",
   "dependencies": {
-    "ink": "^4.4.1",
-    "react": "^18.2.0",
-    "uuid": "^9.0.0",
-    "yaml": "^2.3.4",
-    "zod": "^3.22.0"
+    "@opencode-ai/plugin": "^1.2.27"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.2.27",
     "@types/node": "^20.0.0",
-    "@types/react": "^18.2.0",
-    "@types/uuid": "^9.0.0",
-    "@vitest/coverage-v8": "^1.0.0",
-    "archiver": "^7.0.1",
-    "typescript": "^5.3.0",
-    "vitest": "^1.0.0"
+    "typescript": "^5.3.0"
   }
 }
