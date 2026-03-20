@@ -26,6 +26,7 @@ interface QueueState {
   results: TaskResult[]
   running: boolean
   currentSessionId?: string
+  batchSize: number  // 每次执行的任务数量
 }
 
 // 按项目目录存储队列，避免不同项目/session之间的冲突
@@ -41,6 +42,7 @@ function getQueue(directory: string): QueueState {
       currentIndex: 0,
       results: [],
       running: false,
+      batchSize: 1,
     })
   }
   return queueMap.get(directory)!
@@ -141,22 +143,31 @@ export const TaskManagerPlugin: Plugin = async ({ client, directory }) => {
     }
   }
 
-  // 执行所有任务（串行）
+  // 执行所有任务（支持批量并行）
   async function executeAllTasks(): Promise<void> {
     while (queue.running && queue.currentIndex < queue.files.length) {
-      const filename = queue.files[queue.currentIndex]
+      // 计算本次要执行的任务数量
+      const batchSize = queue.batchSize
+      const endIndex = Math.min(queue.currentIndex + batchSize, queue.files.length)
+      const batchFiles = queue.files.slice(queue.currentIndex, endIndex)
       
-      const result = await executeTask(filename)
+      // 并行执行一批任务
+      const promises = batchFiles.map(filename => executeTask(filename))
+      const results = await Promise.all(promises)
       
       // 更新任务状态
-      const task = queue.results.find(t => t.filename === filename && t.status === "running")
-      if (task) {
-        task.status = result.success ? "success" : "failed"
-        task.summary = result.summary
-        task.error = result.error
+      for (let i = 0; i < batchFiles.length; i++) {
+        const filename = batchFiles[i]
+        const result = results[i]
+        const task = queue.results.find(t => t.filename === filename && t.status === "running")
+        if (task) {
+          task.status = result.success ? "success" : "failed"
+          task.summary = result.summary
+          task.error = result.error
+        }
       }
       
-      queue.currentIndex++
+      queue.currentIndex = endIndex
     }
     
     queue.running = false
@@ -172,6 +183,7 @@ export const TaskManagerPlugin: Plugin = async ({ client, directory }) => {
           ext: tool.schema.string().optional().default("java").describe("文件后缀，如 java、ts、tsx"),
           recursive: tool.schema.boolean().optional().default(false).describe("递归扫描子目录"),
           prompt: tool.schema.string().describe("任务提示词，{filename} 代表文件名"),
+          batchSize: tool.schema.number().optional().default(1).describe("每次并行执行的任务数量，默认1（串行）"),
         },
         async execute(args) {
           // 支持绝对路径和相对路径
@@ -228,8 +240,12 @@ export const TaskManagerPlugin: Plugin = async ({ client, directory }) => {
           queue.currentIndex = 0
           queue.results = []
           queue.running = false
+          queue.batchSize = args.batchSize || 1
 
-          let result = `✅ 队列已创建\n\n文件数: ${files.length}\n\n`
+          const batchInfo = queue.batchSize > 1 
+            ? `\n并行数: ${queue.batchSize} 个任务/批次` 
+            : ""
+          let result = `✅ 队列已创建\n\n文件数: ${files.length}${batchInfo}\n\n`
           files.slice(0, 20).forEach((f, i) => result += `  ${i + 1}. ${f}\n`)
           if (files.length > 20) result += `  ... 还有 ${files.length - 20} 个\n`
 
@@ -259,7 +275,7 @@ export const TaskManagerPlugin: Plugin = async ({ client, directory }) => {
           // 启动执行（后台运行，不阻塞）
           executeAllTasks()
 
-          return `✅ 队列已启动\n\n总任务: ${queue.files.length}\n\n📌 任务会自动串行执行\n📌 每个 Session 会显示在右侧任务栏\n\n运行 task-status 查看进度`
+          return `✅ 队列已启动\n\n总任务: ${queue.files.length}\n并行数: ${queue.batchSize}\n\n📌 任务会自动执行（${queue.batchSize > 1 ? '并行' : '串行'}）\n📌 每个 Session 会显示在右侧任务栏\n\n运行 task-status 查看进度`
         },
       }),
 
