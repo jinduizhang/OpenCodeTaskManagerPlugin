@@ -12,11 +12,13 @@
 
 ## 安装
 
-### 方式一：复制到项目
+### 步骤 1：复制插件文件
 
-1. 复制 `task-manager.ts` 到项目的 `.opencode/plugins/task-manager.ts`
+复制 `task-manager.ts` 到项目的 `.opencode/plugins/task-manager.ts`
 
-2. 在 `.opencode/package.json` 添加依赖：
+### 步骤 2：添加依赖（必配）
+
+在 `.opencode/package.json` 中添加依赖：
 
 ```json
 {
@@ -26,14 +28,16 @@
 }
 ```
 
-3. 安装依赖：
+> ⚠️ **必配项**：`@opencode-ai/plugin` 是 OpenCode 插件开发 SDK，缺少此依赖插件无法运行。
+
+### 步骤 3：安装依赖
 
 ```bash
 cd .opencode
 npm install
 ```
 
-### 方式二：复制命令文件（可选）
+### 步骤 4：复制命令文件（可选）
 
 复制 `commands/` 目录下的文件到 `.opencode/commands/`
 
