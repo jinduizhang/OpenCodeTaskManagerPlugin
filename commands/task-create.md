@@ -7,7 +7,7 @@ description: 创建任务队列 - 扫描目录文件，为每个文件创建 Ses
 1. 询问我目录路径（可以是相对路径如 src/main/java，或绝对路径）
 2. 询问我文件后缀（如 java、ts、tsx）
 3. 询问我是否递归扫描子目录
-4. 询问我任务提示词(如使用generate-java-ut技能生成用例)
+4. 询问我任务提示词(如使用generate-java-ut技能生成用例，给所有的public方法增加doc注释)
 
 然后用 task-create 工具创建队列：
 - dir: 用户提供的目录（支持相对路径和绝对路径）
