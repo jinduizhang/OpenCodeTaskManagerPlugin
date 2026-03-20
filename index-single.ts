@@ -1,240 +1,184 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import * as fs from "fs"
-import * as path from "path"
 
-// ==================== 任务存储 ====================
-interface Task {
-  id: string
-  title: string
-  agent: string
-  prompt: string
-  priority: "high" | "medium" | "low"
-  status: "pending" | "running" | "success" | "failed"
-  retryCount: number
-  createdAt: number
-}
+/**
+ * OpenCode Task Manager Plugin
+ * 
+ * 每个任务创建独立的 Session，显示在右侧任务栏
+ */
 
-interface QueueState {
-  isRunning: boolean
-  tasks: Task[]
-}
-
-// 内存存储
-let queueState: QueueState = {
-  isRunning: false,
-  tasks: []
-}
-
-// 文件存储路径
-function getStorageDir(baseDir: string): string {
-  return path.join(baseDir, ".opencode", "task-manager")
-}
-
-function getTasksFile(baseDir: string): string {
-  return path.join(getStorageDir(baseDir), "tasks.json")
-}
-
-function loadTasks(baseDir: string): void {
-  const file = getTasksFile(baseDir)
-  try {
-    if (fs.existsSync(file)) {
-      const data = JSON.parse(fs.readFileSync(file, "utf-8"))
-      queueState.tasks = data.tasks || []
-      queueState.isRunning = data.isRunning || false
-    }
-  } catch (e) {
-    console.error("[task-manager] Failed to load tasks:", e)
-  }
-}
-
-function saveTasks(baseDir: string): void {
-  const dir = getStorageDir(baseDir)
-  const file = getTasksFile(baseDir)
-  try {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-    fs.writeFileSync(file, JSON.stringify(queueState, null, 2))
-  } catch (e) {
-    console.error("[task-manager] Failed to save tasks:", e)
-  }
-}
-
-function generateId(): string {
-  return `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-}
-
-// ==================== 插件定义 ====================
 export const TaskManagerPlugin: Plugin = async ({ client, directory }) => {
-  loadTasks(directory)
-  console.log(`[task-manager] Loaded ${queueState.tasks.length} tasks`)
+  console.log("[task-manager] Plugin loaded")
 
   return {
     tool: {
       "task-add": tool({
-        description: "添加任务到队列",
+        description: "创建任务（独立Session），显示在右侧任务栏",
         args: {
-          title: tool.schema.string().optional().describe("任务标题（可选）"),
-          agent: tool.schema.string().describe("Agent名称"),
+          title: tool.schema.string().optional().describe("任务标题"),
+          agent: tool.schema.string().describe("Agent名称: explore, oracle, build, quick"),
           prompt: tool.schema.string().describe("任务描述"),
-          priority: tool.schema.enum(["high", "medium", "low"]).optional().default("medium").describe("优先级"),
-          retryCount: tool.schema.number().optional().default(0).describe("重试次数"),
         },
         async execute(args, context) {
-          const task: Task = {
-            id: generateId(),
-            title: args.title || `任务: ${args.agent}`,
-            agent: args.agent,
-            prompt: args.prompt,
-            priority: args.priority || "medium",
-            status: "pending",
-            retryCount: args.retryCount || 0,
-            createdAt: Date.now()
+          const taskTitle = args.title || `任务: ${args.agent}`
+          
+          // 创建独立的 Session（会显示在右侧任务栏）
+          const session = await client.session.create({
+            body: {
+              title: `📋 ${taskTitle}`,
+            },
+          })
+
+          if (!session.data) {
+            return `❌ 创建 Session 失败`
           }
-          queueState.tasks.push(task)
-          saveTasks(context.directory)
-          const pending = queueState.tasks.filter(t => t.status === "pending").length
-          return `✅ 任务已添加\nID: ${task.id}\n标题: ${task.title}\nAgent: ${task.agent}\n待执行: ${pending}`
+
+          const sessionId = session.data.id
+
+          // 发送 prompt 到 Session
+          await client.session.prompt({
+            path: { id: sessionId },
+            body: {
+              agent: args.agent,
+              parts: [{ type: "text", text: args.prompt }],
+            },
+          })
+
+          return `✅ 任务已创建
+
+Session ID: ${sessionId}
+标题: ${taskTitle}
+Agent: ${args.agent}
+
+📌 任务显示在右侧任务栏，点击可查看详情和执行进度`
         },
       }),
 
       "task-list": tool({
-        description: "列出所有任务",
+        description: "列出所有任务（Session列表）",
         args: {
-          status: tool.schema.enum(["pending", "running", "success", "failed", "all"]).optional().default("all").describe("筛选状态"),
+          limit: tool.schema.number().optional().default(10).describe("显示数量"),
         },
         async execute(args, context) {
-          loadTasks(context.directory)
-          let tasks = queueState.tasks
-          if (args.status && args.status !== "all") {
-            tasks = tasks.filter(t => t.status === args.status)
+          // 获取所有 Session
+          const sessions = await client.session.list()
+
+          if (!sessions.data) {
+            return "📭 当前没有任务（Session）"
           }
-          if (tasks.length === 0) {
-            return "📭 当前没有任务"
+
+          const list = sessions.data
+          
+          if (list.length === 0) {
+            return "📭 当前没有任务（Session）"
           }
-          const stats = {
-            total: queueState.tasks.length,
-            pending: queueState.tasks.filter(t => t.status === "pending").length,
-            running: queueState.tasks.filter(t => t.status === "running").length,
-            success: queueState.tasks.filter(t => t.status === "success").length,
-            failed: queueState.tasks.filter(t => t.status === "failed").length,
-          }
-          let result = `📋 任务列表 (共 ${stats.total} 个)\n待执行=${stats.pending} 执行中=${stats.running} 成功=${stats.success} 失败=${stats.failed}\n\n`
-          tasks.forEach((t, i) => {
-            const icon = { pending: "⏳", running: "🔄", success: "✅", failed: "❌" }[t.status]
-            result += `${i + 1}. ${icon} [${t.id}] ${t.title}\n   Agent: ${t.agent}\n`
+
+          const limit = args.limit || 10
+          const display = list.slice(0, limit)
+
+          let result = `📋 任务列表 (共 ${list.length} 个 Session)\n\n`
+
+          display.forEach((s: any, i: number) => {
+            result += `${i + 1}. [${s.id.slice(0, 8)}] ${s.title || "无标题"}\n`
           })
+
+          if (list.length > limit) {
+            result += `\n... 还有 ${list.length - limit} 个任务`
+          }
+
+          result += `\n\n💡 点击右侧任务栏切换 Session`
+
           return result
         },
       }),
 
       "task-status": tool({
-        description: "查询任务状态",
-        args: { taskId: tool.schema.string().describe("任务ID") },
-        async execute(args, context) {
-          loadTasks(context.directory)
-          const task = queueState.tasks.find(t => t.id === args.taskId)
-          if (!task) return `❌ 任务 ${args.taskId} 不存在`
-          return `📋 任务详情\nID: ${task.id}\n标题: ${task.title}\n状态: ${task.status}\nAgent: ${task.agent}\n创建: ${new Date(task.createdAt).toLocaleString()}\n\nPrompt:\n${task.prompt}`
+        description: "查看任务详情",
+        args: {
+          sessionId: tool.schema.string().describe("Session ID"),
         },
-      }),
-
-      "task-cancel": tool({
-        description: "取消任务",
-        args: { taskId: tool.schema.string().describe("任务ID") },
         async execute(args, context) {
-          loadTasks(context.directory)
-          const task = queueState.tasks.find(t => t.id === args.taskId)
-          if (!task) return `❌ 任务 ${args.taskId} 不存在`
-          if (task.status !== "pending") return `❌ 只能取消 pending 状态的任务，当前: ${task.status}`
-          task.status = "failed"
-          saveTasks(context.directory)
-          return `✅ 任务 ${args.taskId} 已取消`
-        },
-      }),
+          const session = await client.session.get({
+            path: { id: args.sessionId },
+          })
 
-      "task-retry": tool({
-        description: "重试任务",
-        args: { taskId: tool.schema.string().describe("任务ID") },
-        async execute(args, context) {
-          loadTasks(context.directory)
-          const task = queueState.tasks.find(t => t.id === args.taskId)
-          if (!task) return `❌ 任务 ${args.taskId} 不存在`
-          if (task.status !== "failed") return `❌ 只能重试 failed 状态的任务，当前: ${task.status}`
-          task.status = "pending"
-          saveTasks(context.directory)
-          return `✅ 任务 ${args.taskId} 已重新加入队列`
+          if (!session.data) {
+            return `❌ Session ${args.sessionId} 不存在`
+          }
+
+          const s = session.data as any
+          let result = `📋 任务详情\n\n`
+          result += `ID: ${s.id}\n`
+          result += `标题: ${s.title || "无标题"}\n`
+          if (s.status) result += `状态: ${s.status}\n`
+          if (s.created_at) result += `创建: ${new Date(s.created_at).toLocaleString()}\n`
+
+          return result
         },
       }),
 
       "queue-status": tool({
-        description: "查看队列状态",
+        description: "查看任务统计",
         args: {},
         async execute(args, context) {
-          loadTasks(context.directory)
-          const stats = {
-            total: queueState.tasks.length,
-            pending: queueState.tasks.filter(t => t.status === "pending").length,
-            running: queueState.tasks.filter(t => t.status === "running").length,
-            success: queueState.tasks.filter(t => t.status === "success").length,
-            failed: queueState.tasks.filter(t => t.status === "failed").length,
+          const sessions = await client.session.list()
+
+          if (!sessions.data) {
+            return "📭 当前没有任务"
           }
-          return `📊 队列状态\n运行中: ${queueState.isRunning ? "✅" : "⏸️"}\n总计: ${stats.total}\n待执行: ${stats.pending}\n执行中: ${stats.running}\n成功: ${stats.success}\n失败: ${stats.failed}`
+
+          const list = sessions.data
+
+          return `📊 任务统计
+
+总计: ${list.length} 个 Session
+
+💡 任务显示在右侧任务栏，点击可切换`
         },
       }),
 
-      "queue-start": tool({
-        description: "启动队列",
-        args: {},
+      "task-new": tool({
+        description: "快速创建新任务（新Session）",
+        args: {
+          prompt: tool.schema.string().describe("任务描述"),
+          agent: tool.schema.string().optional().default("explore").describe("Agent名称"),
+        },
         async execute(args, context) {
-          loadTasks(context.directory)
-          queueState.isRunning = true
-          saveTasks(context.directory)
-          const pending = queueState.tasks.filter(t => t.status === "pending").length
-          return `✅ 队列已启动\n待执行任务: ${pending}`
+          // 创建 Session
+          const session = await client.session.create({
+            body: {
+              title: args.prompt.slice(0, 50) + (args.prompt.length > 50 ? "..." : ""),
+            },
+          })
+
+          if (!session.data) {
+            return `❌ 创建失败`
+          }
+
+          // 发送 prompt
+          await client.session.prompt({
+            path: { id: session.data.id },
+            body: {
+              agent: args.agent || "explore",
+              parts: [{ type: "text", text: args.prompt }],
+            },
+          })
+
+          return `✅ 任务已创建并开始执行
+
+Session: ${session.data.id}
+Agent: ${args.agent || "explore"}
+
+📌 查看右侧任务栏获取执行进度`
         },
       }),
 
-      "queue-stop": tool({
-        description: "停止队列",
+      "task-open": tool({
+        description: "打开 Session 选择器（右侧任务栏）",
         args: {},
         async execute(args, context) {
-          loadTasks(context.directory)
-          queueState.isRunning = false
-          saveTasks(context.directory)
-          return `⏸️ 队列已停止`
-        },
-      }),
-
-      "task-tui": tool({
-        description: "启动任务管理器终端界面",
-        args: {},
-        async execute(args, context) {
-          const tasksFile = getTasksFile(context.directory)
-          const tuiPath = path.join(context.directory, ".opencode", "plugins", "task-manager", "src", "tui", "cli.ts")
-          
-          return `🖥️ 任务管理器 TUI
-
-在新的终端窗口运行:
-
-  cd ${context.directory}
-  npx tsx ${tuiPath}
-
-或使用工具命令:
-  task-list    列出任务
-  task-add     添加任务
-  queue-status 查看状态
-
-数据文件: ${tasksFile}
-
-TUI 快捷键:
-  ↑/↓    选择任务
-  Enter  查看详情
-  A      添加任务
-  C      取消任务
-  R      重试任务
-  Q/Esc  退出`
+          await client.tui.openSessions()
+          return "📌 已打开 Session 选择器\n\n请在右侧任务栏选择要切换的 Session"
         },
       }),
     },
