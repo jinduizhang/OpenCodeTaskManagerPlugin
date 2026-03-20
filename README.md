@@ -6,7 +6,7 @@
 
 - **任务队列**：扫描目录文件，创建任务队列
 - **串行/并行执行**：支持串行（默认）或批量并行执行
-- **Session 管理**：每个任务创建独立 Session，显示在右侧任务栏
+- **Session 管理**：每个任务创建独立 Session
 - **结果汇总**：汇总所有任务的执行结果
 - **项目隔离**：不同项目的队列互不干扰
 
@@ -118,8 +118,6 @@ task-create dir="D:\OpenCode\config-history\src" ext="java" recursive=true promp
 
 - 每个任务创建独立 Session
 - Session 标题为文件名（如 `ConfigServiceImpl.java`）
-- Session 显示在 OpenCode 右侧任务栏
-- 点击可查看执行进度和结果
 
 ## 注意事项
 
