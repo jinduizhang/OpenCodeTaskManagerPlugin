@@ -115,14 +115,30 @@ Session 完成等待时间设置为 1 小时，适应长时间任务。
 ## 文件结构
 
 ```
+OpenCodeTaskManagerPlugin/
+├── task-manager.ts       # 插件文件
+├── commands/
+│   ├── task-create.md
+│   ├── task-start.md
+│   ├── task-status.md
+│   └── task-summary.md
+├── DESIGN.md             # 设计说明
+├── README.md             # 使用说明
+└── package.json          # 依赖声明
+```
+
+## 用户使用
+
+```
 .opencode/
 ├── plugins/
-│   └── task-manager.ts    # 插件文件
-└── commands/
-    ├── task-create.md
-    ├── task-start.md
-    ├── task-status.md
-    └── task-summary.md
+│   └── task-manager.ts    # 复制插件文件
+├── commands/
+│   ├── task-create.md     # 复制命令文件（可选）
+│   ├── task-start.md
+│   ├── task-status.md
+│   └── task-summary.md
+└── package.json           # 添加依赖
 ```
 
 ## 依赖

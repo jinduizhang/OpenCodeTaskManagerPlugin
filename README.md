@@ -14,7 +14,7 @@
 
 ### 方式一：复制到项目
 
-1. 复制 `index.ts` 到项目的 `.opencode/plugins/task-manager.ts`
+1. 复制 `task-manager.ts` 到项目的 `.opencode/plugins/task-manager.ts`
 
 2. 在 `.opencode/package.json` 添加依赖：
 
